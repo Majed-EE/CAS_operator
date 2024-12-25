@@ -1,23 +1,3 @@
-# Flask server
-# from flask import Flask, request, jsonify
-# cas_endpoint="10.194.118.91"
-# cas_port="5000"
-
-# app = Flask(__name__)
-
-# @app.route('/receive', methods=['POST'])
-# def receive():
-#     # Get JSON data from request
-#     data = request.get_json()
-#     print("Received data:", data)
-#     return jsonify({"status": "success", "received_data": data})
-
-# if __name__ == '__main__':
-
-#     app.run(host=cas_endpoint, port=cas_port,debug=True)
-
-
-# About-
 
 # Flask server
 from flask import Flask, request, jsonify
@@ -27,32 +7,49 @@ import pybullet_data
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-# import threading 
+import threading 
 
+global angle_desired
+angle_desired=None
+app = Flask(__name__)
 
+@app.route('/receive', methods=['POST'])
+def receive_data():
+    global angle_desired
+    data = request.json  # Receive JSON data
+    print(f"Flask Received data: {data}")
+    angle_desired=data['user_input']
+    return {"message": "Data received successfully"}, 200
 
 import logging
-logging.basicConfig(level=logging.DEBUG, format=' %(asctime)s - %(levelname)s - %(message)s')
-logging.debug('Start of program')
 
+# Create a custom logger
+logger = logging.getLogger("MyLogger")
+logger.setLevel(logging.DEBUG)  # Set the logging level
 
+# Create handlers
+console_handler = logging.StreamHandler()  # Console handler
+console_handler.setLevel(logging.INFO)  # Log INFO and above to console
 
+file_handler = logging.FileHandler("logfile.log")  # File handler
+file_handler.setLevel(logging.DEBUG)  # Log DEBUG and above to file
 
-# Create a logger object
-logger = logging.getLogger('my_app')
+# Create formatters and add them to handlers
+console_format = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+file_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-# Set up a file handler to write logs to a file
-file_handler = logging.FileHandler('app.log')
+console_handler.setFormatter(console_format)
+file_handler.setFormatter(file_format)
 
-# Set up a console handler to output logs to the console
-console_handler = logging.StreamHandler()
-
-# Add both handlers to the logger
-logger.addHandler(file_handler)
+# Add handlers to the logger
 logger.addHandler(console_handler)
+logger.addHandler(file_handler)
 
-# Write a log message
-logger.info('This message will be written to both the file and the console')
+
+
+logger.debug('Start of program')
+
+
 
 
 
@@ -218,7 +215,7 @@ ch_step=0
 
 
 
-logging.debug("Main program started")
+logger.debug("Main program started")
 
 
 
@@ -234,13 +231,13 @@ def controller_output(bend_angle):
     finger=finger_1
        #  [11]#finger_3 is index
 
-    logging.debug(f"start of loop controller finge id ={finger}")
+    logger.debug(f"start of loop controller finge id ={finger}")
 
 
     target_bend = bend_angle
     tarPos=[target_bend]*len(finger)
-    logging.debug(f"target Position  {tarPos}")
-    logging.debug(f"target bend= {target_bend}")
+    logger.debug(f"target Position  {tarPos}")
+    logger.debug(f"target bend= {target_bend}")
     # lock.acquire()
     p.setJointMotorControlArray(
     bodyUniqueId=arhId,
@@ -249,8 +246,8 @@ def controller_output(bend_angle):
     targetPositions=[target_bend]*len(finger),
     forces=[Force_applied]*len(finger))
     # lock.release()
-    # logging.debug(f"controller loop{x}")
-    # time.sleep(3)
+    # logger.debug(f"controller loop{x}")
+#     # time.sleep(3)
 
 
 
@@ -260,20 +257,12 @@ def controller_output(bend_angle):
 
 
 
-def sim_loop():
-    logging.debug("start of sim loop")
+def sim_loop(lock):
+    logger.debug("start of sim loop")
+    global angle_desired
     for c_step in range(100):
         p.stepSimulation()
         time.sleep(1./10.)
-
-        if c_step>=50:
-            bend_angle=math.radians(0)
-            controller_output(bend_angle)
-            logging.debug(f"condition: open,  bend angle {bend_angle}")
-        else :
-            bend_angle=math.radians(80)
-            controller_output(bend_angle)
-            logging.debug(f"condition: close,bend angle {bend_angle}")
         #### Sphere spatial information
         position, orientation = p.getBasePositionAndOrientation(sphereId)
         filtered_position_sphere = list(dim if abs(dim) > threshold else 0 for dim in position)
@@ -289,7 +278,7 @@ def sim_loop():
         joint_state=p.getJointState(
             bodyUniqueId=arhId, 
             jointIndex=tip)
-        logging.debug(f"joint info of joint {tip} joint state {joint_state[2][:3]}")
+        logger.debug(f"joint info of joint {tip} joint state {joint_state[2][:3]}")
         
 
 
@@ -298,8 +287,14 @@ def sim_loop():
         fz.append(joint_state[2][2])
         # joint_state[2][:3]("contact point info")
         contact_info=p.getContactPoints(arhId,cuboidId,15)
-        
-        print(len(contact_info))
+        if angle_desired==None:
+            bend_angle=0
+            controller_output(bend_angle)
+        else:
+            bend_angle=int(angle_desired)
+            controller_output(bend_angle)
+        logger.info(f"bend angle is {angle_desired}")
+        # print(len(contact_info))
         if len(contact_info)>0:
             
             
@@ -316,49 +311,21 @@ def sim_loop():
         # print(f"Filtered position of cuboid (x, y, z): {filtered_position_cuboid}")
         # print(position,orientation)
         dimension_cuboid = [aabb_cuboid[1][i] - aabb_cuboid[0][i] for i in range(3)]
-        # print(f"initial dimension cuboid {dimension_cuboid}")
-    # # Get the position and orientation of the robot
-    # position, orientation = p.getBasePositionAndOrientation(sphereId)
 
-    ######################################## Simulation ends ################################
+    print("############## End of LOOP ##########################")
 
-    # # Generate some sample data
-    # x = [x for x in range(len(fz))]#np.linspace(0, 5, 100)
-    # # y1 = x**2
-    # # y2 = np.sin(2*x)
-    # # y3 = np.exp(-x)
-    # vertical=[fz[x] if x==ch_step else 0 for x in range(len(fz)) ]
-    # # Create the plot
-
-    # plt.plot(x, fx, label='fx')  # Plot the first line with a label
-    # plt.plot(x, fy, label='fy')  # Plot the second line with a label
-    # plt.plot(x, fz, label='fz')  # Plot the third li"ne with a label
-    # plt.scatter(ch_step,fz[ch_step], label="contac_point_instance")
-    # print(vertical)
-    # # Add labels and title
-    # plt.xlabel('X-axis')
-    # plt.ylabel('Y-axis')
-
-    # plt.title('Three Graphs Overlaid')
-
-    # # Add legend
-    # plt.legend()
-
-    # plt.show()
-
-
-
-
-
-# lock = threading.Lock()
+lock = threading.Lock()
 
 # thread1_control_loop = threading.Thread(target=controller_output,args=(lock,))
-# thread2_sim_loop = threading.Thread(target=sim_loop,args=(lock,))
+thread2_sim_loop = threading.Thread(target=sim_loop,args=(lock,))
 
 # thread1_control_loop.start()
-# thread2_sim_loop.start()
+thread2_sim_loop.start()
 
-# thread1_control_loop.join()
+# 
 # thread2_sim_loop.join()
-sim_loop()
-logging.debug("end of main loop")
+
+if __name__ == '__main__':
+    app.run(port=5000)  # Server runs on port 5000
+    thread2_sim_loop.join()
+    logger.debug("end of main loop")
